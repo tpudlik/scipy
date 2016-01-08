@@ -633,6 +633,7 @@ from .orthogonal import *
 from .spfun_stats import multigammaln
 from ._ellip_harm import ellip_harm, ellip_harm_2, ellip_normal
 from .lambertw import lambertw
+from .hypergeometric import new_hyp1f1
 
 
 __all__ = [s for s in dir() if not s.startswith('_')]
