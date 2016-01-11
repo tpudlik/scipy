@@ -19,6 +19,8 @@ from scipy._lib.six import reraise, with_metaclass
 from scipy._lib._testutils import knownfailure_overridable
 from scipy.special._testutils import FuncData, assert_func_equal
 
+import warnings
+
 try:
     import mpmath
 except ImportError:
@@ -126,6 +128,42 @@ def test_hyp1f1_hard_points_complex():
         FuncData(sc.hyp1f1, dataset, (0,1,2), 3, rtol=1e-10).check()
     finally:
         np.seterr(**olderr)
+
+
+@knownfailure_overridable("the Taylor series fails a lot")
+def test_hyp1f1_taylor():
+    HYPERKW = dict(maxprec=200, maxterms=200)
+
+    assert_mpmath_equal(hypergeometric.taylor_series,
+                        _exception_to_nan(lambda a, b, x: mpmath.hyp1f1(a, b, x, **HYPERKW)),
+                        [Arg(1, 10), Arg(1, 10), ComplexArg(-10 - 10J, 10 + 10J)],
+                        n=100)
+
+
+def test_hyp1f1_asymptotic():
+    # The parameter and argument ranges get fudged a lot; we try to
+    # stay within the mathematical limits of the asymptotic series
+    # while getting enough coverage to feel confident in our
+    # implementation.
+    HYPERKW = dict(maxprec=200, maxterms=200)
+
+    # Quadrants I and IV
+    assert_mpmath_equal(hypergeometric.asymptotic_series,
+                        _exception_to_nan(lambda a, b, x: mpmath.hyp1f1(a, b, x, **HYPERKW)),
+                        [Arg(1, 40), Arg(1, 40), ComplexArg(30 - 100J, 100 + 100J)],
+                        n=200)
+
+    # Quadrant II and III have to be done separately to avoid the
+    # branch cut on the negative real axis.
+    assert_mpmath_equal(hypergeometric.asymptotic_series,
+                        _exception_to_nan(lambda a, b, x: mpmath.hyp1f1(a, b, x, **HYPERKW)),
+                        [Arg(1, 40), Arg(1, 40), ComplexArg(-100 - 90J, -30 - 1J)],
+                        n=200)
+
+    assert_mpmath_equal(hypergeometric.asymptotic_series,
+                        _exception_to_nan(lambda a, b, x: mpmath.hyp1f1(a, b, x, **HYPERKW)),
+                        [Arg(1, 40), Arg(1, 40), ComplexArg(-90 + 1J, -30 + 90J)],
+                        n=200)
 
 
 def test_hyp1f1_recurrences():

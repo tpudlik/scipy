@@ -33,7 +33,7 @@ def new_hyp1f1(a, b, z):
     """
     if b <= 0 and b == int(b):
         # Poles are located at 0, -1, -2, ...
-        return np.inf
+        return np.nan + 1J*np.nan
     kummer = False
     if (a < 0 or b < 0) and not (a < 0 and b < 0):
         # Use Kummer's relation (3.19) in _[pop].
@@ -86,14 +86,12 @@ def hyp1f1_III(a, b, z):
     """Compute hyp1f1 in the case where a, b < 0."""
     # Handle the special case where a is a negative integer, in which
     # case hyp1f1 is a polynomial
-    if a == -1:
-        res = 1 - z/b
-    elif a == int(a):
+    if a == int(a):
         m = int(-a)
         term = 1
         res = 1
         for i in range(m):
-            term *= z*(a + i)/(i*(b + i))
+            term *= z*(a + i)/((i + 1)*(b + i))
             res += term
     # Use the (++) recurrence to get to case IA or IB.
     else:
@@ -240,7 +238,7 @@ def taylor_series(a, b, z, maxiters=500, tol=tol):
     while i <= maxiters:
         An = Ao*(a + i)*z / ((b + i)*(i + 1))
         Sn = So + An
-        if np.abs(An/Sn) < tol and np.abs(Ao/So) < tol:
+        if Sn != 0 and So != 0 and np.abs(An/Sn) < tol and np.abs(Ao/So) < tol:
             break
         else:
             So = Sn
@@ -301,22 +299,14 @@ def asymptotic_series(a, b, z, maxiters=500, tol=tol):
     A2 = 1
     S2 = A2
     # Is 8 terms optimal? Not sure.
-    for i in xrange(1, 9):
+    for i in range(1, 9):
         A1 = A1*(i - a)*(b - a + i - 1) / (z*i)
         S1 += A1
         A2 = -A2*(a + i - 1)*(a - b + i) / (z*i)
         S2 += A2
 
-    x = np.real(z)
-    y = np.imag(z)
-    if np.allclose(x, 0) and y > 0:
-        phi = 0.5*pi
-    elif np.allclose(x, 0) and y < 0:
-        phi = -0.5*pi
-    else:
-        phi = np.arctan(y/x)
-
-    if np.allclose(phi, 0):
+    phi = np.angle(z)
+    if np.imag(z) == 0:
         expfac = np.cos(pi*a)
     elif phi > -0.5*pi and phi < 1.5*pi:
         expfac = np.exp(1J*pi*a)
