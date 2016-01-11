@@ -62,7 +62,7 @@ def hyp1f1_small_parameters(a, b, z):
         return asymptotic_series(a, b, z)
 
 
-def a_forward_recursion(a, b, z, w0, w1, n):
+def a_forward_recurrence(a, b, z, w0, w1, N):
     """Use the recurrence relation (DLMF 13.3.1)
 
     (b-a)*1F1(a-1,b,z) + (2a-b+z)1F1(a,b,z) - a*1F1(a+1,b,z) = 0
@@ -78,7 +78,7 @@ def a_forward_recursion(a, b, z, w0, w1, n):
     1F1.
 
     """
-    for i in xrange(n):
+    for i in xrange(N):
         tmp = w1
         w1 = ((b - a)*w0 + (2*a - b + z)*w1)/a
         w0 = tmp
@@ -86,35 +86,105 @@ def a_forward_recursion(a, b, z, w0, w1, n):
     return w1
 
 
-def b_backwards_recursion(a, b, z, w0, w1, n):
-    """Use the recurrence relation (3.32) from [3],
+def b_backward_recurrence(a, b, z, w0, w1, N):
+    """Use recurrence relation (3.14) from [3] to compute hyp1f1(a, b -
+    N, z) given w0 = hyp1f1(a, b + 1, z) and w1 = hyp1f1(a, b, z).
 
-    z*1F1(a,b+1,z) - (b+z)*1F1(a,b,z) + (b-a)*1F1(a,b-1,z) = 0,
-
-    to compute 1F1(a,b-n,z) given w0 = 1F1(a,b+1,z) and w1 =
-    1F1(a,b,z).
-
-    The minimal solution of this relation is
-
-    gamma(b+n-a)*1F1(a,b+n,z)/gamma(b+n),
-
-    so after scaling by the right factors of gamma we're safe to
-    naively use back recursion.
-
+    The minimal solution is gamma(b - a)*hyp1f1(a, b, z)/gamma(b), so
+    it's safe to naively use the recurrence relation.
     """
-    w0 *= gamma(b + 1 - a)*rgamma(b + 1)
-    w1 *= gamma(b - a)*rgamma(b)
-    for i in xrange(n):
+    for i in range(N):
         tmp = w1
-        w1 = ((b + z)*w1 - z*w0) / (b - a)
+        w1 = -((z*(b - a))*w0 + b*(1 - b - z)*w1) / (b*(b - 1))
         w0 = tmp
         b -= 1
-    return rgamma(b - n - a)*gamma(b - n)*w1
+    return w1
+
+
+def b_forward_recurrence(a, b, z, w0, N, tol):
+    """Use the recurrence relation (3.14) from [3] to compute
+    hyp1f1(a, b + N, z) given w0 = hyp1f1(a, b, z).
+
+    The minimal solution is gamma(b - a)*hyp1f1(a, b, z)/gamma(b),
+    so we use Olver's algorithm. Here we follow the notation from the
+    DLMF 3.6.
+
+    """
+    # TODO: use the log of gamma to prevent blowup
+    w0 *= gamma(b - a)*rgamma(b)
+    p, e = [0, 1], [w0]
+    curmin, n = 1e100, 1
+    # Forward substitution
+    while True:
+        an, bn, cn = 1, -(1 - b - n - z)/z, (b - a + n - 1)/z
+        p.append((bn*p[-1] - cn*p[-2])/an)
+        e.append(cn*e[-1]/an)
+        testmin = abs(e[-1]/(p[-2]*p[-1]))
+        if n <= N:
+            if testmin < curmin:
+                curmin = testmin
+        else:
+            if testmin <= tol*curmin:
+                break
+        n += 1
+    # Back substitution
+    wn = 0
+    for i in range(n, N, -1):
+        wn = (p[i-1]*wn + e[i-1])/p[i]
+    return rgamma(b + N - a)*gamma(b + N)*wn
+
+
+def ab_backward_recurrence(a, b, z, w0, w1, N):
+    """Use recurrence relation (3.14) from [3] to compute hyp1f1(a - N, b
+    - N, z) given w0 = hyp1f1(a + 1, b + 1, z) and w1 = hyp1f1(a, b, z).
+
+    The minimal solution is hyp1f1(a, b, z)/gamma(b), so it's safe to
+    naively use the recurrence relation.
+
+    """
+    for i in range(N):
+        tmp = w1
+        w1 = (a*z*w0 + b*(b - z - 1)*w1) / (b*(b - 1))
+        w0 = tmp
+        a -= 1
+        b -= 1
+    return w1
+
+
+def ab_forward_recurrence(a, b, z, w0, N, tol):
+    """Use the recurrence relation (3.14) from [3] to compute
+    hyp1f1(a + N, b + N, z) given w0 = hyp1f1(a, b, z).
+
+    The minimal solution is hyp1f1(a, b, z)/gamma(b), so we use
+    Olver's algorithm. Here we follow the notation from the DLMF 3.6.
+
+    """
+    w0 *= rgamma(b)
+    p, e = [0, 1], [w0]
+    curmin, n = 1e100, 1
+    # Forward substitution
+    while True:
+        an, bn, cn = 1, -(b - z - 1 + n)/((a + n)*z), -1/((a + n)*z)
+        p.append((bn*p[-1] - cn*p[-2])/an)
+        e.append(cn*e[-1]/an)
+        testmin = abs(e[-1]/(p[-2]*p[-1]))
+        if n <= N:
+            if testmin < curmin:
+                curmin = testmin
+        else:
+            if testmin <= tol*curmin:
+                break
+        n += 1
+    # Back substitution
+    wn = 0
+    for i in range(n, N, -1):
+        wn = (p[i-1]*wn + e[i-1])/p[i]
+    return gamma(b + N)*wn
 
 
 def taylor_series(a, b, z, maxiters=500, tol=tol):
     """
-    Compute 1F1 by evaluating the series directly.
+    Compute hyp1f1 by evaluating the Taylor series directly.
 
     """
     Ao = 1

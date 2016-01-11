@@ -10,10 +10,12 @@ import time
 from distutils.version import LooseVersion
 
 import numpy as np
-from numpy.testing import dec, run_module_suite, assert_, assert_allclose
+from numpy.testing import (dec, run_module_suite, assert_, assert_allclose,
+                           assert_almost_equal)
 from numpy import pi
 
 import scipy.special as sc
+from scipy.special import hypergeometric
 from scipy._lib.six import reraise, with_metaclass
 from scipy._lib._testutils import knownfailure_overridable
 from scipy.special._testutils import FuncData, assert_func_equal
@@ -152,6 +154,41 @@ def test_hyp1f1_hard_points_complex():
         FuncData(sc.hyp1f1, dataset, (0,1,2), 3, rtol=1e-10).check()
     finally:
         np.seterr(**olderr)
+
+
+def test_hyp1f1_recurrences():
+    pts = [
+        (1, 20, 1 + 1J),
+        (1, -0.5, 1 + 1J)
+    ]
+    N = 10
+    tol = 1e-15
+
+    for a, b, z in pts:
+        w0 = complex(mpmath.hyp1f1(a, b + 1, z))
+        w1 = complex(mpmath.hyp1f1(a, b, z))
+        res = hypergeometric.b_backward_recurrence(a, b, z, w0, w1, N)
+        std = complex(mpmath.hyp1f1(a, b - N, z))
+        assert_almost_equal(res, std, err_msg="a, b, z = {}, {}, {}".format(a, b, z))
+
+    for a, b, z in pts:
+        w0 = complex(mpmath.hyp1f1(a, b, z))
+        res = hypergeometric.b_forward_recurrence(a, b, z, w0, N, tol)
+        std = complex(mpmath.hyp1f1(a, b + N, z))
+        assert_almost_equal(res, std, err_msg="a, b, z = {}, {}, {}".format(a, b, z))
+
+    for a, b, z in pts:
+        w0 = complex(mpmath.hyp1f1(a + 1, b + 1, z))
+        w1 = complex(mpmath.hyp1f1(a, b, z))
+        res = hypergeometric.ab_backward_recurrence(a, b, z, w0, w1, N)
+        std = complex(mpmath.hyp1f1(a - N, b - N, z))
+        assert_almost_equal(res, std, err_msg="a, b, z = {}, {}, {}".format(a, b, z))
+
+    for a, b, z in pts:
+        w0 = complex(mpmath.hyp1f1(a, b, z))
+        res = hypergeometric.ab_forward_recurrence(a, b, z, w0, N, tol)
+        std = complex(mpmath.hyp1f1(a + N, b + N, z))
+        assert_almost_equal(res, std, err_msg="a, b, z = {}, {}, {}".format(a, b, z))
 
 
 #------------------------------------------------------------------------------
