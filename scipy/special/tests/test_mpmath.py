@@ -1372,6 +1372,13 @@ class TestSystematic(with_metaclass(_SystematicMeta, object)):
                             n=2000)
 
     @knownfailure_overridable()
+    def test_new_hyp1f1(self):
+        assert_mpmath_equal(_inf_to_nan(sc.new_hyp1f1),
+                            _exception_to_nan(lambda a, b, x: mpmath.hyp1f1(a, b, x, **HYPERKW)),
+                            [Arg(-1e5, 1e5), Arg(-1e5, 1e5), Arg()],
+                            n=2000)
+
+    @knownfailure_overridable()
     def test_hyp1f1_complex(self):
         assert_mpmath_equal(_inf_to_nan(lambda a, b, x: sc.hyp1f1(a.real, b.real, x)),
                             _exception_to_nan(lambda a, b, x: mpmath.hyp1f1(a, b, x, **HYPERKW)),
