@@ -1,12 +1,5 @@
 """
-An implementation of the confluent hypergeometric function based on [3].
-
-Sources
-[1] Gil, Segura, Temme, "Numerical Methods for Special Functions"
-[2] Nist, DLMF
-[3] Pearson, Olver, and Porter "Computation of Hypergeometric Functions",
-"Numerical Methods for the Computation of the Confluent and Gauss Hypergeometric Functions",
-http://arxiv.org/abs/1407.7786.
+An implementation of the confluent hypergeometric function.
 
 """
 
@@ -19,47 +12,100 @@ from . import gamma, rgamma, jv
 import warnings
 
 tol = 1.0e-15
-BIGPARAM = 4 # should be > 2
 BIGZ = 30
 
 
 def new_hyp1f1(a, b, z):
-    """Compute the confluent hypergeometric function 1F1."""
+    """
+    An implementation of the confluent hypergeometric function based on _[pop].
+
+    References
+    ----------
+    ..[gst] Gil, Segura, Temme, 
+            *Numerical Methods for Special Functions*,
+            SIAM, 2007.
+    ..[dlmf] Nist, DLMF
+    ..[pop] Pearson, Olver, Porter,
+            *Numerical Methods for the Computation of the Confluent
+            and Gauss Hypergeometric Functions*,
+            http://arxiv.org/abs/1407.7786.
+
+    """
     if b <= 0 and b == int(b):
         # Poles are located at 0, -1, -2, ...
         return np.inf
-    elif b < -BIGPARAM:
-        n = int(np.abs(b) - BIGPARAM) + 2
-        b = b + n
-        if a < -BIGPARAM:
-            raise NotImplementedError
-        elif a > BIGPARAM:
-            raise NotImplementedError
+    kummer = False
+    if (a < 0 or b < 0) and not (a < 0 and b < 0):
+        # Use Kummer's relation (3.19) in _[pop].
+        a, z = b - a, -z
+        kummer = True
+
+    if a >= 0 and b >= 0 and z >= 0:
+        res = hyp1f1_IA(a, b, z)
+    elif a >= 0 and b >= 0 and z < 0:
+        res = hyp1f1_IB(a, b, z)
+    elif a < 0 and b < 0:
+        res = hyp1f1_III(a, b, z)
+    else:
+        raise Exception("Shouldn't be able to get here!")
+
+    if kummer:
+        res *= np.exp(-z)
+    return res
+
+
+def hyp1f1_IA(a, b, z):
+    """Compute hyp1f1 in the case where a, b >= 0 and z >= 0."""
+    if np.abs(z) >= BIGZ:
+        res = asymptotic_series(a, b, z)
+    else:
+        res = taylor_series(a, b, z)
+    return res
+
+
+def hyp1f1_IB(a, b, z):
+    """Compute hyp1f1 in the case where a, b >= 0 and z < 0."""
+    if a > b + 2:
+        N = int(a - b)
+        if np.abs(z) >= BIGZ:
+            w0 = asymptotic_series(a, b + N + 1, z)
+            w1 = asymptotic_series(a, b + N, z)
         else:
-            w0 = hyp1f1_small_parameters(a, b + 1, z)
-            w1 = hyp1f1_small_parameters(a, b, z)
-            return b_backwards_recursion(a, b, z, w0, w1, n)
-    elif b > BIGPARAM:
-        raise NotImplementedError
-    elif a < -BIGPARAM:
-        raise NotImplementedError
-    elif a > BIGPARAM:
-        raise NotImplementedError
+            w0 = taylor_series(a, b + N + 1, z)
+            w1 = taylor_series(a, b + N, z)
+        res = b_backward_recurrence(a, b + N, z, w0, w1, N)
     else:
-        return hyp1f1_small_parameters(a, b, z)
+        if np.abs(z) >= BIGZ:
+            res = asymptotic_series(a, b, z)
+        else:
+            res = taylor_series(a, b, z)
+    return res
 
 
-def hyp1f1_small_parameters(a, b, z):
-    """Compute 1F1 when |a|, |b| < BIGPARAM.
-
-    WARNING: this function does not check for poles.
-
-    """
-    assert np.abs(a) <= BIGPARAM and np.abs(b) <= BIGPARAM
-    if np.abs(z) < BIGZ:
-        return taylor_series(a, b, z)
+def hyp1f1_III(a, b, z):
+    """Compute hyp1f1 in the case where a, b < 0."""
+    # Handle the special case where a is a negative integer, in which
+    # case hyp1f1 is a polynomial
+    if a == -1:
+        res = 1 - z/b
+    elif a == int(a):
+        m = int(-a)
+        term = 1
+        res = 1
+        for i in range(m):
+            term *= z*(a + i)/(i*(b + i))
+            res += term
+    # Use the (++) recurrence to get to case IA or IB.
     else:
-        return asymptotic_series(a, b, z)
+        N = int(max(-a, -b) + 1)
+        if z >= 0:
+            w0 = hyp1f1_IA(a + N + 1, b + N + 1, z)
+            w1 = hyp1f1_IA(a + N, b + N, z)
+        else:
+            w0 = hyp1f1_IB(a + N + 1, b + N + 1, z)
+            w1 = hyp1f1_IB(a + N, b + N, z)
+        res = ab_backward_recurrence(a + N, b + N, z, w0, w1, N)
+    return res
 
 
 def a_forward_recurrence(a, b, z, w0, w1, N):
@@ -87,11 +133,12 @@ def a_forward_recurrence(a, b, z, w0, w1, N):
 
 
 def b_backward_recurrence(a, b, z, w0, w1, N):
-    """Use recurrence relation (3.14) from [3] to compute hyp1f1(a, b -
+    """Use recurrence relation (3.14) from _[pop] to compute hyp1f1(a, b -
     N, z) given w0 = hyp1f1(a, b + 1, z) and w1 = hyp1f1(a, b, z).
 
     The minimal solution is gamma(b - a)*hyp1f1(a, b, z)/gamma(b), so
     it's safe to naively use the recurrence relation.
+
     """
     for i in range(N):
         tmp = w1
@@ -102,8 +149,8 @@ def b_backward_recurrence(a, b, z, w0, w1, N):
 
 
 def b_forward_recurrence(a, b, z, w0, N, tol):
-    """Use the recurrence relation (3.14) from [3] to compute
-    hyp1f1(a, b + N, z) given w0 = hyp1f1(a, b, z).
+    """Use the recurrence relation (3.14) from _[pop] to compute hyp1f1(a,
+    b + N, z) given w0 = hyp1f1(a, b, z).
 
     The minimal solution is gamma(b - a)*hyp1f1(a, b, z)/gamma(b),
     so we use Olver's algorithm. Here we follow the notation from the
@@ -135,8 +182,8 @@ def b_forward_recurrence(a, b, z, w0, N, tol):
 
 
 def ab_backward_recurrence(a, b, z, w0, w1, N):
-    """Use recurrence relation (3.14) from [3] to compute hyp1f1(a - N, b
-    - N, z) given w0 = hyp1f1(a + 1, b + 1, z) and w1 = hyp1f1(a, b, z).
+    """Use recurrence relation (3.14) from _[pop] to compute hyp1f1(a - N,
+    b - N, z) given w0 = hyp1f1(a + 1, b + 1, z) and w1 = hyp1f1(a, b, z).
 
     The minimal solution is hyp1f1(a, b, z)/gamma(b), so it's safe to
     naively use the recurrence relation.
@@ -152,8 +199,8 @@ def ab_backward_recurrence(a, b, z, w0, w1, N):
 
 
 def ab_forward_recurrence(a, b, z, w0, N, tol):
-    """Use the recurrence relation (3.14) from [3] to compute
-    hyp1f1(a + N, b + N, z) given w0 = hyp1f1(a, b, z).
+    """Use the recurrence relation (3.14) from _[pop] to compute hyp1f1(a
+    + N, b + N, z) given w0 = hyp1f1(a, b, z).
 
     The minimal solution is hyp1f1(a, b, z)/gamma(b), so we use
     Olver's algorithm. Here we follow the notation from the DLMF 3.6.
@@ -206,8 +253,8 @@ def taylor_series(a, b, z, maxiters=500, tol=tol):
 
 
 def single_fraction(a, b, z, maxiters=500, tol=tol):
-    """Compute 1F1 by expanding the Taylor series as a single fraction
-    and performing one division at the end. See section 3.3 of [3] for
+    """Compute 1F1 by expanding the Taylor series as a single fraction and
+    performing one division at the end. See section 3.3 of _[pop] for
     details.
 
     """
@@ -240,8 +287,8 @@ def single_fraction(a, b, z, maxiters=500, tol=tol):
 
 
 def asymptotic_series(a, b, z, maxiters=500, tol=tol):
-    """Compute 1F1 using an asymptotic series. This uses DLMF 13.7.2 and
-    DLMF 13.2.4. Note that the series is divergent (as one would
+    """Compute hyp1f1 using an asymptotic series. This uses DLMF 13.7.2
+    and DLMF 13.2.4. Note that the series is divergent (as one would
     expect); this can be seen by the ratio test.
 
     """
@@ -284,8 +331,8 @@ def asymptotic_series(a, b, z, maxiters=500, tol=tol):
 
 
 def bessel_series(a, b, z, maxiters=500, tol=tol):
-    """Compute 1F1 using a series of Bessel functions; see (3.20) in
-    [3].
+    """Compute hyp1f1 using a series of Bessel functions; see (3.20) in
+    _[pop].
 
     """
     Do, Dm, Dn = 1, 0, b/2
