@@ -21,10 +21,17 @@ def new_hyp1f1(a, b, z):
 
     References
     ----------
+    ..[dlmf] Nist, DLMF
     ..[gst] Gil, Segura, Temme, 
             *Numerical Methods for Special Functions*,
             SIAM, 2007.
-    ..[dlmf] Nist, DLMF
+    ..[luke] Yudell L. Luke,
+            *Algorithms for the Computation of Mathematical Functions",
+            Academic Press, 1977
+    ..[muller] Keith Muller,
+            *Computing the confluent hypergeometric function, M(a, b, x)*,
+            Numerische Mathematik 90(1) 179 (2001),
+            http://link.springer.com/10.1007/s002110100285
     ..[pop] Pearson, Olver, Porter,
             *Numerical Methods for the Computation of the Confluent
             and Gauss Hypergeometric Functions*,
@@ -352,3 +359,59 @@ def bessel_series(a, b, z, maxiters=500, tol=tol):
         warnings.warn("Number of evaluations exceeded maxiters on "
                       "a = {}, b = {}, z = {}.".format(a, b, z))
     return gamma(b)*np.exp(z/2)*2**(b - 1)*Sn
+
+def rational_approximation(a, b, z, maxiters=500, tol=tol):
+    """Compute hyp1f1 using the rational approximation of _[luke], as described
+    in _[muller].
+
+    This method only works for real a, b, and z.
+
+    """
+    if z < 0:
+        return np.exp(z)*rational_approximation(b - a, b, -z)
+
+    d = b - a
+    Q0 = 1
+    Q1 = 1 + z*(d + 1)/(2*b)
+    Q2 = 1 + z*(d + 2)/(2*(b + 1)) + z**2*(d + 1)*(d + 2)/(12*b*(b + 1))
+    P0 = 1
+    P1 = Q1 - z*d/b
+    P2 = Q2 - (z*d/b)*(1 + z*(d + 2)/(2*(b + 1))) + z**2*d*(d + 1)/(2*b*(b + 1))
+
+    def f1(i):
+        return (i - d - 2)/(2*(2*i - 3)*(i + b - 1))
+
+    def f2(i):
+        num = (i + d)*(i + d - 1)
+        den = 4*(2*i - 1)*(2*i - 3)*(i + b - 2)*(i + b - 1)
+        return num/den
+
+    def f3(i):
+        num = (i + d - 2)*(i + d - 1)*(i - d - 2)
+        den = 8*(2*i - 3)**2*(2*i - 5)*(i + b - 3)*(i + b - 2)*(i + b - 1)
+        return -num/den
+
+    def f4(i):
+        num = (i + d - 1)*(i - b - 1)
+        den = 2*(2*i - 3)*(i + b - 2)*(i + b - 1)
+        return -num/den
+
+    for i in xrange(3, maxiters):
+        Pi = (1 + f1(i)*z)*P2 + (f4(i) + f2(i)*z)*z*P1 + f3(i)*z**3*P0
+        Qi = (1 + f1(i)*z)*Q2 + (f4(i) + f2(i)*z)*z*Q1 + f3(i)*z**3*Q0
+        Mi = Pi/Qi
+        
+        if not np.isfinite(Mi) or (P1 != 0 and np.abs(Q2*Mi/(P2) - 1) < 10**(-15)):
+            return Mi*np.exp(z)
+
+        P0 = P1
+        P1 = P2
+        P2 = Pi
+        Q0 = Q1
+        Q1 = Q2
+        Q2 = Qi
+
+    warnings.warn("Number of evaluations exceeded maxiters at "
+                  "a = {}, b = {}, z = {}.".format(a, b, z))
+    return Mi*np.exp(z)
+
