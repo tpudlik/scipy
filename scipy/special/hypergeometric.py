@@ -7,12 +7,24 @@ from __future__ import division
 import numpy as np
 from numpy import pi
 from numpy.lib.scimath import sqrt
-from . import gamma, rgamma, jv
+from . import gamma, rgamma, jv, gammaln, poch
 
 import warnings
 
 tol = 1.0e-15
 BIGZ = 30
+
+# Coefficients of the polynomial g appearing in the hyperasymptotic
+# expansion of Paris (2013).
+PARIS_G = np.vstack((np.array([0,0,0,0,0,0,0,0, -1, 2/3]),
+                     np.array([0,0,0,0,0,0, -90, 270, -225, 46])/15,
+                     np.array([0,0,0,0,-756, 5040, -11760, 11340, -3969,
+                               230])/70,
+                     np.array([0,0, -3240, 37800, -170100, 370440, -397530,
+                               183330, -17781, -3226])/350,
+                     np.array([-1069200, 19245600, -141134400, 541870560,
+                               -1160830440, 1353607200, -743046480,
+                               88280280, 43924815, -4032746])/231000))
 
 
 def new_hyp1f1(a, b, z):
@@ -297,20 +309,8 @@ def asymptotic_series(a, b, z, maxiters=500, tol=tol):
     expect); this can be seen by the ratio test.
 
     """
-    # S1 is the first sum; the ith term is
-    # (1 - a)_i * (b - a)_i * z^(-s) / i!
-    # S2 is the second sum; the ith term is
-    # (a)_i * (a - b + 1)_i * (-z)^(-s) / i!
-    A1 = 1
-    S1 = A1
-    A2 = 1
-    S2 = A2
-    # Is 8 terms optimal? Not sure.
-    for i in range(1, 9):
-        A1 = A1*(i - a)*(b - a + i - 1) / (z*i)
-        S1 += A1
-        A2 = -A2*(a + i - 1)*(a - b + i) / (z*i)
-        S2 += A2
+    if np.imag(z) == 0 and np.real(z) < 0:
+        return paris_series(a, b, z, maxiters)
 
     phi = np.angle(z)
     if np.imag(z) == 0:
@@ -322,9 +322,157 @@ def asymptotic_series(a, b, z, maxiters=500, tol=tol):
     else:
         raise Exception("Shouldn't be able to get here!")
 
-    c1 = np.exp(z)*z**(a - b)*rgamma(a)
-    c2 = expfac*z**(-a)*rgamma(b - a)
-    return gamma(b)*(c1*S1 + c2*S2)
+    if np.real(a) and np.real(b) and np.real(z) and (a < 0 or b < 0):
+        # gammaln will not give correct results for real negative
+        # arguments, so the args must be cast to complex.
+        c1 = np.real(np.exp(gammaln(b+0j) - gammaln(a+0j) + z))*z**(a - b)
+    else:
+        c1 = np.exp(gammaln(b) - gammaln(a) + z)*z**(a - b)
+    if np.real(a) and np.real(b) and np.real(z) and (b - a < 0 or b < 0):
+        c2 = np.real(np.exp(gammaln(b + 0j) - gammaln(b - a + 0j))*z**(-a))
+    else:
+        c2 = np.exp(gammaln(b) - gammaln(b - a))*z**(-a)
+
+    # S1 is the first sum; the ith term is
+    # (1 - a)_i * (b - a)_i * z^(-s) / i!
+    # S2 is the second sum; the ith term is
+    # (a)_i * (a - b + 1)_i * (-z)^(-s) / i!
+    largest_term = 0
+    previous_term = np.inf
+    A1 = 1
+    S1 = A1
+    A2 = 1
+    S2 = A2
+    for i in range(1, maxiters + 1):
+        A1 = A1*(i - a)*(b - a + i - 1) / (z*i)
+        A2 = -A2*(a + i - 1)*(a - b + i) / (z*i)
+        current_term = np.abs(c1*A1 + c2*A2)
+        if current_term > largest_term:
+            # Sometimes, the terms of the series increase initially.  We want
+            # to keep summing until we're past the first maximum.
+            largest_term = current_term
+        elif current_term > previous_term:
+            # We've passed the smallest term of the series: adding more will
+            # only harm precision
+            break
+        current_sum = c1*S1 + c2*S2
+        if c1*(S1 + A1) + c2*(S2 + A2) == current_sum or not np.isfinite(current_sum):
+            break
+        S1 += A1
+        S2 += A2
+        previous_term = current_term
+
+    return c1*S1 + c2*S2
+
+
+def paris_series(a, b, z, maxiters=200):
+    """The exponentially improved asymptotic expansion along the negative real
+    axis developed by Paris (2013).
+
+    The exponentially improved expansion does not appear to improve the
+    performance of the series in general, perhaps as a result of an
+    implementation bug, so it has been commented out.
+
+    """
+    x = -z
+    if np.real(a) and np.real(b) and (b < 0 or b - a < 0):
+        c = np.exp(gammaln(b + 0j) - gammaln(b - a + 0j) - a*np.log(x))
+        c = np.real(c)
+    else:
+        c = np.exp(gammaln(b) - gammaln(b - a) - a*np.log(x))
+
+    theta = a - b
+    if np.isreal(theta) and theta == np.floor(theta):
+        if theta >= 0:
+            # The hypergeometric function is a polynomial in n, so there are
+            # no exponentially small corrections.
+            if np.real(a) and np.real(b) and (b < 0 or a < 0):
+                c = np.exp(-x + gammaln(a + 0j) - gammaln(b + 0j))
+                c = np.real(c)
+            else:
+                c = np.exp(-x + gammaln(a) - gammaln(b))
+            c = c * x**theta * (-1)**theta
+
+            A1 = 1
+            S1 = 1
+            n = int(theta)
+            for i in xrange(n + 1):
+                A1 = A1*((1 - a + i)*(n - i)/(x*(i + 1)))
+                S1 += A1
+
+            return c*S1
+        else:
+            # We use the same prefactor c as in the general case, but sum
+            # a fixed number of terms, not up to the smallest one.
+            A1 = 1
+            S1 = 1
+            n = int(-theta)
+            for i in xrange(n):
+                A1 = A1*((a + i)*(1 + theta + i)/((i + 1)*x))
+                S1 += A1
+
+            return c*S1  # + paris_exponential_series(a, b, z, i, maxiters)
+
+    A1 = 1
+    S1 = 1
+    previous_term = np.inf
+    largest_term = 0
+    for i in xrange(maxiters):
+        A1 = A1*((a + i)*(1 + theta + i)/((i + 1)*x))
+        current_term = np.abs(A1)
+        if current_term > largest_term:
+            largest_term = current_term
+        elif current_term > previous_term:
+            break
+        S1 += A1
+        previous_term = current_term
+
+    return c*S1  # + paris_exponential_series(a, b, z, i, maxiters)
+
+
+def paris_exponential_series(a, b, z, i, maxiters):
+    """The exponentially small addition to the asymptotic expansion on the
+    negative real axis.
+
+    The argument `i` is the truncation index for the original series.
+
+    This function does not reproduce all of the significant figures of Table 2
+    in Paris (2013), suggesting a small implementation bug.
+
+    Possibly fewer than all 5 terms should be summed for optimal peformance.
+    (There are of course infinitely many terms, but the first 5 are the only
+    ones for which the polynomial coefficients were included in the paper.)
+
+    """
+    M = 5
+    theta = a - b
+    x = -z
+    if i < maxiters:
+        # The optimal truncation term has been determined.
+        v = a + i + theta
+    else:
+        # We don't know how many terms are optimal exactly (it's more than the
+        # number of terms summed), so we'll use an approximation.
+        v = x
+
+    A = np.arange(M)
+    A = poch(1 - a, A)*poch(b - a, A)/gamma(A + 1)
+
+    first_sum = np.sum((-1)**np.arange(M) * A * x**(-np.arange(M)))
+    second_sum = 0
+    for idx in xrange(M):
+        B = sum((-2)**k*poch(0.5, k)*A[idx-k]*np.polyval(PARIS_G[k,:],v - x - (idx-k))*6**(-2*k)
+                for k in xrange(idx + 1))
+        second_sum += (-1)**idx * B * x**(-idx)
+
+    if np.real(a) and np.real(b) and (b < 0 or a < 0):
+        c = np.exp(gammaln(b + 0j) - gammaln(a + 0j) - x + theta*np.log(x))
+        c = np.real(c)
+    else:
+        c = np.exp(gammaln(b) - gammaln(a) - x + theta*np.log(x))
+
+    return c*(np.cos(np.pi*theta)*first_sum
+              - 2*np.sin(np.pi*theta)/np.sqrt(2*np.pi*x)*second_sum)
 
 
 def bessel_series(a, b, z, maxiters=500, tol=tol):
