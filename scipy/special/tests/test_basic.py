@@ -136,6 +136,10 @@ class TestCephes(object):
     def test_bdtr(self):
         assert_equal(cephes.bdtr(1,1,0.5),1.0)
 
+    def test_bdtr_large_int(self):
+        """Regression test for gh-9454."""
+        assert_equal(cephes.bdtr(2**31, 2**31, 0.5), 1.0)
+
     def test_bdtri(self):
         assert_equal(cephes.bdtri(1,3,0.5),0.5)
 
