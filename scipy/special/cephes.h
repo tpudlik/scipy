@@ -10,7 +10,7 @@ extern "C" {
 extern int airy(double x, double *ai, double *aip, double *bi, double *bip);
 
 extern double bdtrc(int k, int n, double p);
-extern double bdtr(int k, int n, double p);
+extern double bdtr(long k, long n, double p);
 extern double bdtri(int k, int n, double y);
 
 extern double beta(double a, double b);

@@ -60,7 +60,7 @@ cdef inline double bdtr_unsafe(double k, double n, double p) nogil:
     if npy_isnan(k) or npy_isnan(n):
         return nan
     _legacy_cast_check("bdtr", k, n)
-    return bdtr(<int>k, <int>n, p)
+    return bdtr(<long>k, <long>n, p)
 
 cdef inline double bdtri_unsafe(double k, double n, double y) nogil:
     if npy_isnan(k) or npy_isnan(n):

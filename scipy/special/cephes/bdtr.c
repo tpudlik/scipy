@@ -189,7 +189,7 @@ double p;
 
 
 double bdtr(k, n, p)
-int k, n;
+long k, n;
 double p;
 {
     double dk, dn;

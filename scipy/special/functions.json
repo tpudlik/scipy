@@ -139,7 +139,7 @@
             "bdtr_unsafe": "ddd->d"
         },
         "cephes.h": {
-            "bdtr": "iid->d"
+            "bdtr": "lld->d"
         }
     },
     "bdtrc": {
